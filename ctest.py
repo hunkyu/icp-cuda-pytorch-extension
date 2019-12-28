@@ -6,22 +6,18 @@ import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
 
-import custom_ext as _C
-
-
-# TODO: remove me
-os.environ['CUDA_VISIBL_DEIVCES'] = '3'
+from icp import icp
 
 
 def icp_test(xyz, new_xyz, radius):
     print("\n=> Running icp test")
 
-    xyz = torch.tensor(xyz).cuda()
-    new_xyz = torch.tensor(new_xyz).cuda()
+    xyz = torch.cuda.FloatTensor(xyz)
+    new_xyz = torch.cuda.FloatTensor(new_xyz)
 
     torch.cuda.synchronize()
     start_time = time.time()
-    _C.icp(xyz, new_xyz, radius, 100)
+    icp(xyz, new_xyz, radius, 200)
     torch.cuda.synchronize()
     end_time = time.time()
     print("    * GPU computation time: {}s".format(end_time - start_time))
@@ -39,12 +35,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--radius", type=float, default=1.0)
     parser.add_argument("--voxel_size", type=float, default=0.05)
-    parser.add_argument("--num_points", type=int, default=100000)
+    parser.add_argument("--num_points", type=int, default=60000)
+    parser.add_argument("--gpu", type=str, default='3')
     args = parser.parse_args()
 
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+
     print("=> Load point clouds")
-    xyz = load_files('00', '000000')[:, :3] / args.voxel_size
-    new_xyz = load_files('00', '000001')[:, :3] / args.voxel_size
+    xyz = load_files('00', '000000')[:, :3]
+    new_xyz = load_files('00', '000001')[:, :3]
     if xyz.shape[0] > args.num_points:
         xyz = xyz[:args.num_points, :]
         new_xyz = new_xyz[:args.num_points, :]

@@ -1,5 +1,6 @@
 #include <torch/extension.h>
 #include "ICP/ICP.h"
+#include "nnSearch/nnSearch.h"
 
 #ifdef WITH_CUDA
 extern int get_cudart_version();
@@ -57,4 +58,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("get_cuda_version", &get_cuda_version, "get_cuda_version");
 
   m.def("icp", &ICP, "ICP");
+  m.def("nn_search", &nnSearch, "nnSearch");
 }

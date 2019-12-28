@@ -1,15 +1,15 @@
 #pragma once
 #include <torch/types.h>
 
-at::Tensor ICP_cuda(const at::Tensor& src, const at::Tensor& dst,
-                    const float radius, const int max_iter);
+at::Tensor ICPCuda(const at::Tensor& src, const at::Tensor& dst,
+                   const float radius, const int maxIter);
 
 // Python interface
 inline at::Tensor ICP(const at::Tensor& src, const at::Tensor& dst,
-                      const float radius, const int max_iter) {
+                      const float radius, const int maxIter) {
   if (src.type().is_cuda()) {
 #ifdef WITH_CUDA
-    return ICP_cuda(src, dst, radius, max_iter);
+    return ICPCuda(src, dst, radius, maxIter);
 #else
     AT_ERROR("Not compiled with GPU support");
 #endif

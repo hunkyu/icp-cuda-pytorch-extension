@@ -10,7 +10,7 @@
 
 template <typename T>
 __global__ void nnSearch(const int nthreads, const T *src, const T *dst,
-                         const int M, T *dstTemp) {
+                         const int M, int *idx) {
   CUDA_1D_KERNEL_LOOP(index, nthreads) {
     float minDist = INFINITY;
     int minIdx = -1;
@@ -34,14 +34,11 @@ __global__ void nnSearch(const int nthreads, const T *src, const T *dst,
       }
     } // forj
 
-    dstTemp[index] = dst[minIdx * 3 + 0];
-    dstTemp[index] = dst[minIdx * 3 + 1];
-    dstTemp[index] = dst[minIdx * 3 + 2];
+    idx[index] = minIdx;
   }
 }
 
-at::Tensor ICPCuda(const at::Tensor &src, const at::Tensor &dst,
-                   const float radius, const int maxIter) {
+at::Tensor nnSearch(const at::Tensor &src, const at::Tensor &dst) {
   AT_ASSERTM(src.device().is_cuda(), "src point cloud must be a CUDA tensor");
   AT_ASSERTM(dst.device().is_cuda(), "dst point cloud must be a CUDA tensor");
   at::TensorArg src_t{src, "src", 1}, dst_t{dst, "dst", 2};
@@ -54,40 +51,20 @@ at::Tensor ICPCuda(const at::Tensor &src, const at::Tensor &dst,
   auto N = src.size(0);
   auto M = dst.size(0);
 
-  auto idx = at::empty({N, 2}, src.options()).to(at::kInt);
-  auto dstTemp = at::zeros_like(src);
+  auto idx = at::empty({N}, src.options()).to(at::kInt);
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   dim3 grid(std::min(at::cuda::ATenCeilDiv(N, 512L), 4096L));
   dim3 block(512);
 
-  for (int i = 0; i < maxIter; i++) {
-    // 1. Find Nearest Neighbor
-    AT_DISPATCH_FLOATING_TYPES(src.scalar_type(), "nnSearch", [&] {
-      nnSearch<scalar_t><<<grid, block, 0, stream>>>(
-          N, src.contiguous().data_ptr<scalar_t>(),
-          dst.contiguous().data_ptr<scalar_t>(), M,
-          dstTemp.contiguous().data_ptr<scalar_t>());
-    });
-    cudaDeviceSynchronize();
-    AT_CUDA_CHECK(cudaGetLastError());
+  AT_DISPATCH_FLOATING_TYPES(src.scalar_type(), "nnSearch", [&] {
+    nnSearch<scalar_t><<<grid, block, 0, stream>>>(
+        N, src.contiguous().data_ptr<scalar_t>(),
+        dst.contiguous().data_ptr<scalar_t>(), M,
+        idx.contiguous().data_ptr<int>());
+  });
+  cudaDeviceSynchronize();
+  AT_CUDA_CHECK(cudaGetLastError());
 
-    // 2. Compute H
-    auto srcCenter = at::mean(src, 0);
-    auto dstTempCenter = at::mean(dstTemp, 0);
-    auto srcNorm = at::sub(src, srcCenter);      // Nx3
-    auto dstNorm = at::sub(dst, dstTempCenter);  // Nx3
-    auto hMatrix = at::mm(srcNorm.t(), dstNorm); // 3x3
-
-    // 3. SVD
-    auto out = at::svd(hMatrix);
-    auto U = std::get<0>(out);
-    auto S = std::get<1>(out);
-    auto V = std::get<2>(out);
-
-    // 4. Rotation Matrix and Translation Vector
-    auto R = at::mul(U, V);
-    auto t = dstCenter - at::mul(R, srcCenter); // TODO: check size ?
-  }
   return idx;
 }
