@@ -1,7 +1,14 @@
 #pragma once
 #include <torch/types.h>
 
-// TODO: batch
+/**
+ * TODO: batch
+ * C interface for point cloud nearest neighbor search
+ * @param query query point cloud with size Nx3
+ * @param ref reference point cloud with size Nx3
+ * @return tensor with size Nx2, where the first column is index, distance and
+ * the second column is distance
+ */
 at::Tensor nnSearch(const at::Tensor& src, const at::Tensor& dst);
 
 // TODO: KDTree version

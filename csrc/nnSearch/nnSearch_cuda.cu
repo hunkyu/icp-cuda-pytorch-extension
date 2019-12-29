@@ -9,62 +9,65 @@
        i += blockDim.x * gridDim.x)
 
 template <typename T>
-__global__ void nnSearch(const int nthreads, const T *src, const T *dst,
-                         const int M, int *idx) {
+__global__ void nnSearch(const int nthreads, const T *query, const T *ref,
+                         const int M, T *dist) {
   CUDA_1D_KERNEL_LOOP(index, nthreads) {
     float minDist = INFINITY;
     int minIdx = -1;
 
-    float srcX = src[index * 3 + 0];
-    float srcY = src[index * 3 + 1];
-    float srcZ = src[index * 3 + 2];
+    float queryX = query[index * 3 + 0];
+    float queryY = query[index * 3 + 1];
+    float queryZ = query[index * 3 + 2];
 
-    float dstX, dstY, dstZ, tempDist;
+    float refX, refY, refZ, tempDist;
 
     for (int j = 0; j < M; j++) {
-      dstX = dst[j * 3 + 0];
-      dstY = dst[j * 3 + 1];
-      dstZ = dst[j * 3 + 2];
+      refX = ref[j * 3 + 0];
+      refY = ref[j * 3 + 1];
+      refZ = ref[j * 3 + 2];
 
-      tempDist = (srcX - dstX) * (srcX - dstX) + (srcY - dstY) * (srcY - dstY) +
-                 (srcZ - dstZ) * (srcZ - dstZ);
+      tempDist = (queryX - refX) * (queryX - refX) +
+                 (queryY - refY) * (queryY - refY) +
+                 (queryZ - refZ) * (queryZ - refZ);
       if (tempDist < minDist) {
         minDist = tempDist;
         minIdx = j;
       }
     } // forj
 
-    idx[index] = minIdx;
+    dist[index * 2] = minIdx;
+    dist[index * 2 + 1] = minDist;
   }
 }
 
-at::Tensor nnSearch(const at::Tensor &src, const at::Tensor &dst) {
-  AT_ASSERTM(src.device().is_cuda(), "src point cloud must be a CUDA tensor");
-  AT_ASSERTM(dst.device().is_cuda(), "dst point cloud must be a CUDA tensor");
-  at::TensorArg src_t{src, "src", 1}, dst_t{dst, "dst", 2};
+at::Tensor nnSearch(const at::Tensor &query, const at::Tensor &ref) {
+  AT_ASSERTM(query.device().is_cuda(),
+             "query point cloud must be a CUDA tensor");
+  AT_ASSERTM(ref.device().is_cuda(), "ref point cloud must be a CUDA tensor");
+  at::TensorArg query_t{query, "query", 1}, ref_t{ref, "ref", 2};
 
-  at::CheckedFrom c = "ICP_cuda"; // function name for check
-  at::checkAllSameGPU(c, {src_t, dst_t});
-  at::checkAllSameType(c, {src_t, dst_t});
-  at::cuda::CUDAGuard device_guard(src.device());
+  at::CheckedFrom c = "nnSearch"; // function name for check
+  at::checkAllSameGPU(c, {query_t, ref_t});
+  at::checkAllSameType(c, {query_t, ref_t});
+  at::cuda::CUDAGuard device_guard(query.device());
 
-  auto N = src.size(0);
-  auto M = dst.size(0);
+  auto N = query.size(0);
+  auto M = ref.size(0);
 
-  auto idx = at::empty({N}, src.options()).to(at::kInt);
+  auto dist = at::empty({N, 2}, query.options());
   cudaStream_t stream = at::cuda::getCurrentCUDAStream();
 
   dim3 grid(std::min(at::cuda::ATenCeilDiv(N, 512L), 4096L));
   dim3 block(512);
 
-  AT_DISPATCH_FLOATING_TYPES(src.scalar_type(), "nnSearch", [&] {
+  AT_DISPATCH_FLOATING_TYPES(query.scalar_type(), "nnSearch", [&] {
     nnSearch<scalar_t><<<grid, block, 0, stream>>>(
-        N, src.contiguous().data_ptr<scalar_t>(),
-        dst.contiguous().data_ptr<scalar_t>(), M,
-        idx.contiguous().data_ptr<int>());
+        N, query.contiguous().data_ptr<scalar_t>(),
+        ref.contiguous().data_ptr<scalar_t>(), M,
+        dist.contiguous().data_ptr<scalar_t>());
   });
   cudaDeviceSynchronize();
   AT_CUDA_CHECK(cudaGetLastError());
 
-  return idx;
+  return dist;
 }

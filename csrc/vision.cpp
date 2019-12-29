@@ -1,5 +1,4 @@
 #include <torch/extension.h>
-#include "KDTree/KDTree.h"
 #include "nnSearch/nnSearch.h"
 
 #ifdef WITH_CUDA

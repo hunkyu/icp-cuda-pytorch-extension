@@ -3,7 +3,8 @@ import time
 import torch
 import argparse
 import numpy as np
-from icp import icp, icp_faiss
+
+from layers import nn_search_cuda, icp_cuda, nn_search_faiss
 
 
 def icp_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
@@ -14,8 +15,8 @@ def icp_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
 
     torch.cuda.synchronize()
     start_time = time.time()
-    corres = icp(xyz, new_xyz, 100, threshold=1.0,
-                 ratio=0.5).numpy().astype(int)
+    corres = icp_cuda(xyz, new_xyz, 100, threshold=1.0,
+                      ratio=0.5).numpy().astype(int)
     torch.cuda.synchronize()
     end_time = time.time()
     print("    * ICP CUDA computation time: {}s".format(end_time - start_time))
@@ -24,15 +25,32 @@ def icp_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("    * Matching acc: {}".format(acc))
 
 
-def icp_faiss_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
-    print("\n=> Running faiss test")
+def nn_search_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+    print("\n=> Running Nearest Neighbor search cuda test")
+
+    xyz = torch.cuda.FloatTensor(xyz)
+    new_xyz = torch.cuda.FloatTensor(new_xyz)
 
     torch.cuda.synchronize()
     start_time = time.time()
-    corres = icp_faiss(xyz, new_xyz)
+    corres = nn_search_cuda(xyz, new_xyz, ratio=0.5).numpy().astype(int)
     torch.cuda.synchronize()
     end_time = time.time()
-    print("    * ICP faiss computation time: {}s".format(end_time - start_time))
+    print("    * NN search computation time: {}s".format(end_time - start_time))
+    correct = (xyz_labels[corres[:, 0]] == new_xyz_labels[corres[:, 1]]).sum()
+    acc = correct / (xyz.size(0) * 0.5)
+    print("    * Matching acc: {}".format(acc))
+
+
+def nn_search_faiss_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+    print("\n=> Running Nearest Neighbor search faiss test")
+
+    torch.cuda.synchronize()
+    start_time = time.time()
+    corres = nn_search_faiss(xyz, new_xyz)
+    torch.cuda.synchronize()
+    end_time = time.time()
+    print("    * NN search faiss computation time: {}s".format(end_time - start_time))
     correct = (xyz_labels[corres[:, 0]] == new_xyz_labels[corres[:, 1]]).sum()
     acc = correct / (xyz.shape[0] * 0.5)
     print("    * Matching acc: {}".format(acc))
@@ -71,5 +89,6 @@ if __name__ == '__main__':
     print("    * Point cloud 1's shape {}".format(xyz.shape))
     print("    * Point cloud 2's shape {}".format(new_xyz.shape))
 
-    icp_faiss_test(xyz, new_xyz, xyz_labels, new_xyz_labels)
+    nn_search_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels)
+    # icp_faiss_test(xyz, new_xyz, xyz_labels, new_xyz_labels)
     # icp_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels)

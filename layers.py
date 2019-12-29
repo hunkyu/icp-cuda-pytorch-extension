@@ -5,13 +5,22 @@ import numpy as np
 import custom_ext as _C
 
 
-def icp(src, dst, max_iter, threshold=0.005, ratio=0.5):
+def nn_search_cuda(src, dst, ratio=0.5):
+    dist = _C.nn_search(src, dst)
+    _, mink = torch.topk(-dist[:, 1], int(src.size(0) * ratio))
+    corres = torch.empty(src.size(0), 2)
+    corres[:, 0] = torch.arange(src.size(0))
+    corres[:, 1] = dist[:, 0]
+    return corres[mink].long()
+
+
+def icp_cuda(src, dst, max_iter, threshold=0.005, ratio=0.5):
     prev_err = 0
 
     for i in range(max_iter):
         # 1. Find Nearest Neighbor
-        idx = _C.nn_search(src, dst).long()
-        dst_temp = dst[idx]
+        dist = _C.nn_search(src, dst)
+        dst_temp = dst[dist[:, 0].long()]
 
         # 2. Compute H matrix
         src_center = src.mean(dim=0)
@@ -38,12 +47,12 @@ def icp(src, dst, max_iter, threshold=0.005, ratio=0.5):
     _, mink = torch.topk(-err, int(src.size(0) * ratio))
     corres = torch.empty(src.size(0), 2)
     corres[:, 0] = torch.arange(src.size(0))
-    corres[:, 1] = idx
+    corres[:, 1] = dist[:, 0]
 
     return corres[mink].long()
 
 
-def icp_faiss(src, dst, d=3, ratio=0.5):
+def nn_search_faiss(src, dst, d=3, ratio=0.5):
     res = faiss.StandardGpuResources()  # TODO: global faiss gpu res
     index = faiss.GpuIndexFlat(res, d, faiss.METRIC_L2)
     if isinstance(src, np.ndarray):
