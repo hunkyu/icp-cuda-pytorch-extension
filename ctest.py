@@ -5,12 +5,12 @@ import argparse
 import numpy as np
 import open3d as o3d
 
-from layers import nn_search_cuda, icp_cuda, nn_search_faiss
+from layers import *
 
 
 # TODO: abstract unit-test
 
-def icp_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+def icp_open3d_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("\n=> Running ICP Open3D CPU test")
 
     cur_3d = o3d.geometry.PointCloud()
@@ -33,6 +33,26 @@ def icp_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("    * Matching acc: {}".format(acc))
 
 
+def icp_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+    torch.cuda.empty_cache()
+    print("\n=> Running ICP CPU test")
+
+    xyz = torch.FloatTensor(xyz)
+    new_xyz = torch.FloatTensor(new_xyz)
+
+    torch.cuda.synchronize()
+    start_time = time.time()
+    with torch.autograd.profiler.profile(use_cuda=True) as prof:
+        corres = icp(xyz, new_xyz, 15, ratio=0.5).numpy().astype(int)
+    print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+    torch.cuda.synchronize()
+    end_time = time.time()
+    print("    * ICP CUDA computation time: {}s".format(end_time - start_time))
+    correct = (xyz_labels[corres[:, 0]] == new_xyz_labels[corres[:, 1]]).sum()
+    acc = correct / corres.shape[0]
+    print("    * Matching acc: {}".format(acc))
+
+
 def icp_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     torch.cuda.empty_cache()
     print("\n=> Running ICP CUDA test")
@@ -42,10 +62,30 @@ def icp_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
 
     torch.cuda.synchronize()
     start_time = time.time()
-    corres = icp_cuda(xyz, new_xyz, 15, ratio=0.5).numpy().astype(int)
+    with torch.autograd.profiler.profile(use_cuda=True) as prof:
+        corres = icp(xyz, new_xyz, 15, ratio=0.5).numpy().astype(int)
+    print(prof.key_averages().table(sort_by="self_cpu_time_total"))
     torch.cuda.synchronize()
     end_time = time.time()
     print("    * ICP CUDA computation time: {}s".format(end_time - start_time))
+    correct = (xyz_labels[corres[:, 0]] == new_xyz_labels[corres[:, 1]]).sum()
+    acc = correct / corres.shape[0]
+    print("    * Matching acc: {}".format(acc))
+
+
+def nn_search_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+    torch.cuda.empty_cache()
+    print("\n=> Running Nearest Neighbor search CPU test")
+
+    xyz = torch.FloatTensor(xyz)
+    new_xyz = torch.FloatTensor(new_xyz)
+
+    torch.cuda.synchronize()
+    start_time = time.time()
+    corres = nn_search(xyz, new_xyz, ratio=0.5).numpy().astype(int)
+    torch.cuda.synchronize()
+    end_time = time.time()
+    print("    * NN search computation time: {}s".format(end_time - start_time))
     correct = (xyz_labels[corres[:, 0]] == new_xyz_labels[corres[:, 1]]).sum()
     acc = correct / corres.shape[0]
     print("    * Matching acc: {}".format(acc))
@@ -60,7 +100,7 @@ def nn_search_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
 
     torch.cuda.synchronize()
     start_time = time.time()
-    corres = nn_search_cuda(xyz, new_xyz, ratio=0.5).numpy().astype(int)
+    corres = nn_search(xyz, new_xyz, ratio=0.5).numpy().astype(int)
     torch.cuda.synchronize()
     end_time = time.time()
     print("    * NN search computation time: {}s".format(end_time - start_time))
@@ -113,6 +153,7 @@ if __name__ == '__main__':
     print("    * Point cloud 1's shape {}".format(xyz.shape))
     print("    * Point cloud 2's shape {}".format(new_xyz.shape))
 
+    nn_search_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+    # icp_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
     nn_search_cuda_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
     icp_cuda_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
-    icp_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)

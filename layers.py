@@ -5,7 +5,7 @@ import numpy as np
 import custom_ext as _C
 
 
-def nn_search_cuda(src, dst, ratio=0.5):
+def nn_search(src, dst, ratio=0.5):
     dist = _C.nn_search(src, dst)
     _, mink = torch.topk(-dist[:, 1], int(src.size(0) * ratio))
     corres = torch.empty(src.size(0), 2)
@@ -14,7 +14,7 @@ def nn_search_cuda(src, dst, ratio=0.5):
     return corres[mink].long()
 
 
-def icp_cuda(src, dst, max_iter, threshold=0.005, ratio=0.5):
+def icp(src, dst, max_iter, threshold=0.005, ratio=0.5):
     prev_err = 0
 
     for i in range(max_iter):

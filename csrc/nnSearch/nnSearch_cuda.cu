@@ -40,13 +40,13 @@ __global__ void nnSearch(const int nthreads, const T *query, const T *ref,
   }
 }
 
-at::Tensor nnSearch(const at::Tensor &query, const at::Tensor &ref) {
+at::Tensor nnSearch_cuda(const at::Tensor &query, const at::Tensor &ref) {
   AT_ASSERTM(query.device().is_cuda(),
              "query point cloud must be a CUDA tensor");
   AT_ASSERTM(ref.device().is_cuda(), "ref point cloud must be a CUDA tensor");
   at::TensorArg query_t{query, "query", 1}, ref_t{ref, "ref", 2};
 
-  at::CheckedFrom c = "nnSearch"; // function name for check
+  at::CheckedFrom c = "nnSearch_cuda"; // function name for check
   at::checkAllSameGPU(c, {query_t, ref_t});
   at::checkAllSameType(c, {query_t, ref_t});
   at::cuda::CUDAGuard device_guard(query.device());
