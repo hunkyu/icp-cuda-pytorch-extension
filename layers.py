@@ -33,16 +33,16 @@ def icp_cuda(src, dst, max_iter, threshold=0.005, ratio=0.5):
         U, S, V = torch.svd(h_matrix)
 
         # 4. Rotation matrix and translation vector
-        R = torch.mm(U, V)
+        R = torch.mm(U, V.T)
         t = dst_temp_center - torch.mm(R, src_center.unsqueeze(1)).squeeze()
 
         # 5. Transform
         src = torch.mm(src, R) + t.unsqueeze(0)
         err = torch.sqrt(torch.norm(src - dst_temp, dim=1))
         mean_err = err.mean()
-        prev_err = mean_err
         if torch.abs(mean_err - prev_err) < threshold:
             break
+        prev_err = mean_err
 
     _, mink = torch.topk(-err, int(src.size(0) * ratio))
     corres = torch.empty(src.size(0), 2)
