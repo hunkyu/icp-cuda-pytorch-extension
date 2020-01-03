@@ -10,7 +10,8 @@
  * @return tensor with size Nx2, where the first column is index, distance and
  * the second column is distance
  */
-at::Tensor nnSearch_cuda(const at::Tensor& src, const at::Tensor& dst);
+std::pair<at::Tensor, at::Tensor> nnSearch_cuda(const at::Tensor& src,
+                                                const at::Tensor& dst);
 #endif
 
 /**
@@ -21,10 +22,12 @@ at::Tensor nnSearch_cuda(const at::Tensor& src, const at::Tensor& dst);
  * @return tensor with size Nx2, where the first column is index, distance and
  * the second column is distance
  */
-at::Tensor nnSearch_cpu(const at::Tensor& src, const at::Tensor& dst);
+std::pair<at::Tensor, at::Tensor> nnSearch_cpu(const at::Tensor& src,
+                                               const at::Tensor& dst);
 
 // Python interface
-inline at::Tensor nnSearch(const at::Tensor& src, const at::Tensor& dst) {
+inline std::pair<at::Tensor, at::Tensor> nnSearch(const at::Tensor& src,
+                                                  const at::Tensor& dst) {
   if (src.type().is_cuda()) {
 #ifdef WITH_CUDA
     return nnSearch_cuda(src, dst);
@@ -33,15 +36,4 @@ inline at::Tensor nnSearch(const at::Tensor& src, const at::Tensor& dst) {
 #endif
   }
   return nnSearch_cpu(src, dst);
-}
-
-inline at::Tensor nnSearchKdtree(const at::Tensor& src, const at::Tensor& dst) {
-  if (src.type().is_cuda()) {
-#ifdef WITH_CUDA
-    return nnSearchKdtree(src, dst);
-#else
-    AT_ERROR("Not compiled with GPU support");
-#endif
-  }
-  AT_ERROR("CPU version not implmented");
 }

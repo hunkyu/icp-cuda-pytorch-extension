@@ -2,13 +2,14 @@ import os
 import time
 import torch
 import argparse
+import unittest
 import numpy as np
 import open3d as o3d
 
 from layers import *
 
-
 # TODO: abstract unit-test
+
 
 def icp_open3d_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("\n=> Running ICP Open3D CPU test")
@@ -33,18 +34,22 @@ def icp_open3d_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("    * Matching acc: {}".format(acc))
 
 
-def icp_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+def icp_pytorch_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     torch.cuda.empty_cache()
-    print("\n=> Running ICP CPU test")
+    print("\n=> Running ICP (PyTorch) all CUDA test")
 
-    xyz = torch.FloatTensor(xyz)
-    new_xyz = torch.FloatTensor(new_xyz)
+    start_time = time.time()
+    xyz = torch.cuda.FloatTensor(xyz)
+    new_xyz = torch.cuda.FloatTensor(new_xyz)
+    end_time = time.time()
+    torch.cuda.synchronize()
+    print("    * Load data time: {}s".format(end_time - start_time))
 
     torch.cuda.synchronize()
     start_time = time.time()
-    with torch.autograd.profiler.profile(use_cuda=True) as prof:
-        corres = icp(xyz, new_xyz, 15, ratio=0.5).numpy().astype(int)
-    print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+    # with torch.autograd.profiler.profile(use_cuda=True) as prof:
+    corres = icp_pytorch(xyz, new_xyz, 15, ratio=0.5).numpy().astype(int)
+    # print(prof.key_averages().table(sort_by="self_cpu_time_total"))
     torch.cuda.synchronize()
     end_time = time.time()
     print("    * ICP CUDA computation time: {}s".format(end_time - start_time))
@@ -53,18 +58,18 @@ def icp_cpu_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("    * Matching acc: {}".format(acc))
 
 
-def icp_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+def icp_pytorch_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     torch.cuda.empty_cache()
-    print("\n=> Running ICP CUDA test")
+    print("\n=> Running ICP (PyTorch) test")
 
-    xyz = torch.cuda.FloatTensor(xyz)
-    new_xyz = torch.cuda.FloatTensor(new_xyz)
+    xyz = torch.FloatTensor(xyz)
+    new_xyz = torch.FloatTensor(new_xyz)
 
     torch.cuda.synchronize()
     start_time = time.time()
-    with torch.autograd.profiler.profile(use_cuda=True) as prof:
-        corres = icp(xyz, new_xyz, 15, ratio=0.5).numpy().astype(int)
-    print(prof.key_averages().table(sort_by="self_cpu_time_total"))
+    # with torch.autograd.profiler.profile(use_cuda=True) as prof:
+    corres = icp_pytorch(xyz, new_xyz, 15, ratio=0.5).numpy().astype(int)
+    # print(prof.key_averages().table(sort_by="self_cpu_time_total"))
     torch.cuda.synchronize()
     end_time = time.time()
     print("    * ICP CUDA computation time: {}s".format(end_time - start_time))
@@ -109,20 +114,6 @@ def nn_search_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("    * Matching acc: {}".format(acc))
 
 
-def nn_search_faiss_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
-    print("\n=> Running Nearest Neighbor search faiss test")
-
-    torch.cuda.synchronize()
-    start_time = time.time()
-    corres = nn_search_faiss(xyz, new_xyz)
-    torch.cuda.synchronize()
-    end_time = time.time()
-    print("    * NN search faiss computation time: {}s".format(end_time - start_time))
-    correct = (xyz_labels[corres[:, 0]] == new_xyz_labels[corres[:, 1]]).sum()
-    acc = correct / (xyz.shape[0] * 0.5)
-    print("    * Matching acc: {}".format(acc))
-
-
 def load_files(seq, id):
     file_path = "data/semanticKITTI/sequences/%s/velodyne/%s.bin"
     file_path = file_path % (seq, id)
@@ -141,7 +132,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--radius", type=float, default=1.0)
     parser.add_argument("--voxel_size", type=float, default=0.05)
-    parser.add_argument("--num_points", type=int, default=120000)
+    parser.add_argument("--num_points", type=int, default=10000)
     parser.add_argument("--gpu", type=str, default='3')
     args = parser.parse_args()
 
@@ -150,10 +141,15 @@ if __name__ == '__main__':
     print("=> Load point clouds")
     xyz, xyz_labels = load_files('00', '000000')
     new_xyz, new_xyz_labels = load_files('00', '000001')
+    if xyz.shape[0] > args.num_points:
+        xyz = xyz[:args.num_points, :3]
+        new_xyz = new_xyz[:args.num_points, :3]
     print("    * Point cloud 1's shape {}".format(xyz.shape))
     print("    * Point cloud 2's shape {}".format(new_xyz.shape))
 
-    nn_search_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
-    # icp_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
     nn_search_cuda_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
-    icp_cuda_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+    nn_search_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+    icp_pytorch_cuda_test(xyz[:, :3], new_xyz[:, :3],
+                          xyz_labels, new_xyz_labels)
+    icp_pytorch_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+    icp_open3d_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)

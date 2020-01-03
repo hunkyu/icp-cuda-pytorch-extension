@@ -5,22 +5,36 @@ import numpy as np
 import custom_ext as _C
 
 
-def nn_search(src, dst, ratio=0.5):
-    dist = _C.nn_search(src, dst)
-    _, mink = torch.topk(-dist[:, 1], int(src.size(0) * ratio))
-    corres = torch.empty(src.size(0), 2)
-    corres[:, 0] = torch.arange(src.size(0))
-    corres[:, 1] = dist[:, 0]
-    return corres[mink].long()
+def nn_search(query, ref, ratio=0.5, cur_label=None,
+              prev_label=None, gt=False, ignore_label=255):
+    """Nearest neighbor search"""
+    idx, dist = _C.nn_search(query, ref)
+    N = query.size(0)
+
+    # TODO: post-processing time?
+    corres = torch.empty(N, 3)
+    corres[:, 0] = torch.arange(N)
+    corres[:, 1] = idx
+    corres[:, 2] = dist
+
+    # skip gt for test (when label is all 0)
+    if gt and cur_label.sum() != 0:
+        correct_idx = (cur_label == prev_label[corres[:, 1].long()]) \
+            & (cur_label != ignore_label)
+        corres = corres[correct_idx]
+        _, mink = torch.topk(-corres[:, 2], int(N * ratio))
+    else:
+        _, mink = torch.topk(-corres[:, 2], int(N * ratio))
+    return corres[mink, :2].long()
 
 
-def icp(src, dst, max_iter, threshold=0.005, ratio=0.5):
-    prev_err = 0
+def icp_pytorch(src, dst, max_iter, threshold=0.005, ratio=0.5):
+    prev_dist = 0
 
     for i in range(max_iter):
         # 1. Find Nearest Neighbor
-        dist = _C.nn_search(src, dst)
-        dst_temp = dst[dist[:, 0].long()]
+        idx, dist = _C.nn_search(src.cuda(), dst.cuda())
+        dst_temp = dst[idx]
 
         # 2. Compute H matrix
         src_center = src.mean(dim=0)
@@ -30,7 +44,7 @@ def icp(src, dst, max_iter, threshold=0.005, ratio=0.5):
         h_matrix = torch.mm(src_norm.T, dst_temp_norm)
 
         # 3. SVD
-        U, S, V = torch.svd(h_matrix)
+        U, S, V = torch.svd(h_matrix)  # FIXME: very slow
 
         # 4. Rotation matrix and translation vector
         R = torch.mm(U, V.T)
@@ -38,50 +52,15 @@ def icp(src, dst, max_iter, threshold=0.005, ratio=0.5):
 
         # 5. Transform
         src = torch.mm(src, R) + t.unsqueeze(0)
-        err = torch.sqrt(torch.norm(src - dst_temp, dim=1))
-        mean_err = err.mean()
-        if torch.abs(mean_err - prev_err) < threshold:
+        mean_dist = dist.mean()
+        if torch.abs(mean_dist - prev_dist) < threshold:
             break
-        prev_err = mean_err
+        prev_dist = mean_dist
 
-    _, mink = torch.topk(-err, int(src.size(0) * ratio))
+    _, mink = torch.topk(-dist, int(src.size(0) * ratio))
     corres = torch.empty(src.size(0), 2)
     corres[:, 0] = torch.arange(src.size(0))
-    corres[:, 1] = dist[:, 0]
+    corres[:, 1] = idx
 
     return corres[mink].long()
 
-
-def nn_search_faiss(src, dst, d=3, ratio=0.5):
-    res = faiss.StandardGpuResources()  # TODO: global faiss gpu res
-    index = faiss.GpuIndexFlat(res, d, faiss.METRIC_L2)
-    if isinstance(src, np.ndarray):
-        index.add(np.ascontiguousarray(dst))
-        D, I = index.search(np.ascontiguousarray(src), 1)
-        corres = np.concatenate(
-            (np.expand_dims(np.arange(I.shape[0]), 1), I), 1)
-        topk = D.argsort(axis=0)[:int(D.shape[0] * ratio)].squeeze()
-        return corres[topk]
-    else:
-        # FIXME
-        def swig_ptr_from_FloatTensor(x):
-            return faiss.cast_integer_to_float_ptr(
-                x.storage().data_ptr() + x.storage_offset() * 4)
-
-        def swig_ptr_from_LongTensor(x):
-            return faiss.cast_integer_to_long_ptr(
-                x.storage().data_ptr() + x.storage_offset() * 8)
-
-        N = src.size(0)
-        # FIXME: not convert to cpu?
-        index.add(np.ascontiguousarray(dst.cpu().numpy()))
-        D = torch.empty(N, 1, device=src.device, dtype=torch.float32)
-        I = torch.empty(N, 1, device=src.device, dtype=torch.float32)
-        xptr = swig_ptr_from_FloatTensor(src)
-        Dptr = swig_ptr_from_FloatTensor(D)
-        Iptr = swig_ptr_from_LongTensor(I)
-        index.search_c(N, xptr, 1, Dptr, Iptr)
-        corres = torch.cat(
-            (torch.arange(I.size(0)).unsqueeze(1), I.cpu().long()), 1)
-        topk = D.argsort(dim=0)[:int(N * ratio)].squeeze()
-        return corres[topk]
