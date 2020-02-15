@@ -114,6 +114,26 @@ def nn_search_cuda_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
     print("    * Matching acc: {}".format(acc))
 
 
+def batch_nn_search_test(xyz, new_xyz, xyz_labels, new_xyz_labels):
+    torch.cuda.empty_cache()
+    print("\n=> Running Batch Nearest Neighbor search test")
+
+    xyz = torch.cuda.FloatTensor(xyz)
+    new_xyz = torch.cuda.FloatTensor(new_xyz)
+
+    torch.cuda.synchronize()
+    start_time = time.time()
+    corres = batch_nn_search(xyz, new_xyz, ratio=0.5).numpy().astype(int)
+    torch.cuda.synchronize()
+    end_time = time.time()
+    print("    * Batch NN search computation time: {}s".format(end_time - start_time))
+    for b in range(corres.shape[0]):
+        correct = (xyz_labels[b, corres[b, :, 0]] ==
+                   new_xyz_labels[b, corres[b, :, 1]]).sum()
+        acc = correct / corres.shape[1]
+        print("    * Matching acc: {}".format(acc))
+
+
 def load_files(seq, id):
     file_path = "data/semanticKITTI/sequences/%s/velodyne/%s.bin"
     file_path = file_path % (seq, id)
@@ -128,11 +148,31 @@ def load_files(seq, id):
     return block, labels
 
 
+def load_files_seq(seq, start_id, length, num_points):
+    block_lists = []
+    label_lists = []
+
+    for id in range(start_id, start_id+length):
+        file_path = "data/semanticKITTI/sequences/%s/velodyne/%06d.bin"
+        file_path = file_path % (seq, id)
+        with open(file_path, 'rb') as b:
+            block = np.fromfile(b, dtype=np.float32).reshape(-1, 4)
+        block_lists.append(block[:num_points, :3])
+
+        label_path = file_path.replace(
+            '.bin', '.label').replace('velodyne', 'labels')
+        with open(label_path, 'rb') as a:
+            labels = np.fromfile(a, dtype=np.int32).reshape(-1)
+        label_lists.append(labels[:num_points])
+
+    return np.array(block_lists), np.array(label_lists)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--radius", type=float, default=1.0)
     parser.add_argument("--voxel_size", type=float, default=0.05)
-    parser.add_argument("--num_points", type=int, default=10000)
+    parser.add_argument("--num_points", type=int, default=50000)
     parser.add_argument("--gpu", type=str, default='3')
     args = parser.parse_args()
 
@@ -144,12 +184,21 @@ if __name__ == '__main__':
     if xyz.shape[0] > args.num_points:
         xyz = xyz[:args.num_points, :3]
         new_xyz = new_xyz[:args.num_points, :3]
+        xyz_labels = xyz_labels[:args.num_points]
+        new_xyz_labels = new_xyz_labels[:args.num_points]
     print("    * Point cloud 1's shape {}".format(xyz.shape))
     print("    * Point cloud 2's shape {}".format(new_xyz.shape))
 
     nn_search_cuda_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
-    nn_search_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
-    icp_pytorch_cuda_test(xyz[:, :3], new_xyz[:, :3],
-                          xyz_labels, new_xyz_labels)
-    icp_pytorch_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
-    icp_open3d_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+    # nn_search_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+    # icp_pytorch_cuda_test(xyz[:, :3], new_xyz[:, :3],
+    #                       xyz_labels, new_xyz_labels)
+    # icp_pytorch_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+    # icp_open3d_cpu_test(xyz[:, :3], new_xyz[:, :3], xyz_labels, new_xyz_labels)
+
+    print("=> Load point cloud sequences")
+    xyzs, xyzs_labels = load_files_seq('00', 0, 5, args.num_points)
+    new_xyzs, new_xyzs_labels = load_files_seq('00', 1, 5, args.num_points)
+    print("    * Point cloud sequence 1's shape {}".format(xyzs.shape))
+    print("    * Point cloud sequence 2's shape {}".format(new_xyzs.shape))
+    batch_nn_search_test(xyzs, new_xyzs, xyzs_labels, new_xyzs_labels)

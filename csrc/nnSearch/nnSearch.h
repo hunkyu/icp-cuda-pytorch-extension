@@ -15,7 +15,6 @@ std::pair<at::Tensor, at::Tensor> nnSearch_cuda(const at::Tensor& src,
 #endif
 
 /**
- * TODO: batch
  * C interface for point cloud nearest neighbor search
  * @param query query point cloud with size Nx3
  * @param ref reference point cloud with size Nx3

@@ -5,7 +5,7 @@ CUDA Iterative Closest Point algorithm for PyTorch (>=1.3).
 ## Install
 
 ```
-$ python setup.py install
+$ python setup.py build develop
 ```
 
 ## Benchmark
@@ -23,10 +23,12 @@ $ python ctest.py --num_points=80000
 |      | Nearest Neighbor Search      | Iterative Closest Point      |
 | ---- | ---------------------------- | ---------------------------- |
 | CPU  | acc = 93.97%, time = 1.06s   | acc = 97.65%, time = 27.96ms |
-| CUDA | acc = 93.97%, time = 29.1ms  | acc = 97.92%, time = 14.34ms |
+| CUDA | acc = 95.54%, time = 21.3ms  | acc = 97.92%, time = 14.34ms |
 
 ## Todo
 
 - [x] Achieve the same matching accuracy as Open3D CPU version
 - [x] Accelerate CUDA ICP
+- [x] Batch NN search (modified from [facebookresearch/pytorch3d](https://github.com/facebookresearch/pytorch3d))
+- [ ] Batch ICP
 - [ ] Use KDTree for NN search

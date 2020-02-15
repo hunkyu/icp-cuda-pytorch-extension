@@ -1,5 +1,4 @@
 import torch
-import faiss
 import numpy as np
 
 import custom_ext as _C
@@ -17,15 +16,7 @@ def nn_search(query, ref, ratio=0.5, cur_label=None,
     corres[:, 1] = idx
     corres[:, 2] = dist
 
-    # skip gt for test (when label is all 0)
-    if gt and cur_label.sum() != 0:
-        correct_idx = (cur_label == prev_label[corres[:, 1].long()]) \
-            & (cur_label != ignore_label)
-        corres = corres[correct_idx]
-        _, mink = torch.topk(-corres[:, 2], int(N * ratio))
-    else:
-        _, mink = torch.topk(-corres[:, 2], int(N * ratio))
-    return corres[mink, :2].long()
+    return corres[:int(N * ratio), :2].long()
 
 
 def icp_pytorch(src, dst, max_iter, threshold=0.005, ratio=0.5):
@@ -64,3 +55,20 @@ def icp_pytorch(src, dst, max_iter, threshold=0.005, ratio=0.5):
 
     return corres[mink].long()
 
+
+def batch_nn_search(query, ref, ratio=0.5, cur_label=None,
+                    prev_label=None, gt=False, ignore_label=255):
+    """Batch nearest neighbor search"""
+    idx, dist = _C.nearest_neighbor_idx(query, ref)
+    B, N = query.size(0), query.size(1)
+
+    corres = torch.empty(B, N, 3)
+    corres[..., 0] = torch.arange(N)
+    corres[..., 1] = idx
+    corres[..., 2] = dist
+
+    # _, mink = torch.topk(corres[..., 2], int(N * ratio), largest=False)
+    # # FIXME: vetorized
+    # for b in range(B):
+    #     out[b, :, :2] = corres[b, mink[b], :2]
+    return corres[:, :int(N * ratio), :2]
